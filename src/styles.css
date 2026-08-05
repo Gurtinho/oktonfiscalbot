@@ -1,0 +1,26 @@
+/*
+ * Estilos globais mínimos.
+ *
+ * O design system deste projeto vive em `src/frontend/theme.ts` (Chakra UI v3):
+ * cores, tipografia, raios e sombras são tokens do tema, aplicados via props
+ * dos componentes Chakra. Não adicione utilitários de CSS aqui — adicione
+ * tokens ao tema.
+ */
+
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+}

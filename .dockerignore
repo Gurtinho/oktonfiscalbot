@@ -1,0 +1,9 @@
+node_modules
+dist
+.nitro
+.vite
+.git
+.env
+.env.*
+*.log
+tsconfig.tsbuildinfo
