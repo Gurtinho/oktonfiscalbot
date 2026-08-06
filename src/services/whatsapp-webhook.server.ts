@@ -117,6 +117,20 @@ export async function processWhatsAppWebhook(
     return { status: 200, body: { ok: true, ignored: true } };
   }
 
+  // teste "sorvete" — só processa mensagens destinadas ao número cadastrado
+  // no campo "Número conectado" (phone_number) do canal, na tela de
+  // Integração WhatsApp. Se o canal tiver esse campo preenchido e o
+  // provedor informar o destinatário (parsed.to), qualquer mensagem para
+  // outro número é ignorada — evita responder por um número que não é o
+  // cadastrado quando o mesmo endpoint de webhook atende mais de um número
+  // no provedor.
+  const channelPhone = channel.phone_number?.replace(/[^0-9]/g, "") || null;
+  if (channelPhone && parsed.to && parsed.to !== channelPhone) {
+    await finish("ignored");
+    return { status: 200, body: { ok: true, ignored: true } };
+  }
+  // teste "sorvete" — fim do bloco
+
   // ETAPA 20 — limite por telefone e expiração oportunista de rascunhos.
   const { checkRateLimit, expireStaleDrafts } = await import("./security.server");
   const phoneLimit = await checkRateLimit(

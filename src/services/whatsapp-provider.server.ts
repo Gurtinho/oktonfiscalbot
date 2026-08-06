@@ -26,6 +26,12 @@ export type WhatsAppChannelConfig = {
 
 export type ProviderMapping = {
   phoneField?: string;
+  // teste "sorvete" — toField: permite mapear, por canal, o campo do
+  // payload que traz o número que RECEBEU a mensagem (o número conectado,
+  // não o do cliente), usado para filtrar pelo "Número conectado" da tela
+  // de Integração WhatsApp.
+  toField?: string;
+  // teste "sorvete" — fim do bloco
   textField?: string;
   optionsField?: string;
   mediaUrlField?: string;
@@ -58,6 +64,11 @@ export type IncomingMessage = {
   messageId: string | null;
   messageType: string;
   timestamp: string | null;
+  // teste "sorvete" — to: número que recebeu a mensagem (número conectado
+  // do canal), extraído do payload para permitir filtrar pelo campo
+  // "Número conectado" da tela de Integração WhatsApp.
+  to: string | null;
+  // teste "sorvete" — fim do bloco
   raw: Record<string, unknown>;
 };
 
@@ -238,7 +249,10 @@ export class WhatsAppProvider {
     });
   }
 
-  static parseIncomingWebhook(payload: Record<string, unknown>): IncomingMessage {
+  static parseIncomingWebhook(
+    payload: Record<string, unknown>,
+    mapping?: ProviderMapping,
+  ): IncomingMessage {
     const phoneRaw = pickString(payload, [
       "phone",
       "from",
@@ -249,8 +263,29 @@ export class WhatsAppProvider {
       "data.key.remoteJid",
       "key.remoteJid",
     ]);
+    // teste "sorvete" — número que recebeu a mensagem (o número conectado
+    // do canal). mapping.toField tem prioridade quando o provedor for
+    // configurado explicitamente; senão tenta os caminhos mais comuns.
+    const toRaw = pickString(payload, [
+      ...(mapping?.toField ? [mapping.toField] : []),
+      "to",
+      "receiver",
+      "owner",
+      "instanceOwner",
+      "connectedPhone",
+      "data.to",
+      "data.owner",
+      "data.instanceOwner",
+      "data.connectedPhone",
+      "instance.owner",
+    ]);
+    // teste "sorvete" — fim do bloco
     return {
       phone: phoneRaw ? phoneRaw.replace(/[^0-9]/g, "") || null : null,
+      // teste "sorvete" — mesma normalização (só dígitos) usada no phone,
+      // pra comparar de forma consistente com o "Número conectado".
+      to: toRaw ? toRaw.replace(/[^0-9]/g, "") || null : null,
+      // teste "sorvete" — fim do bloco
       name: pickString(payload, [
         "senderName",
         "pushName",
@@ -300,7 +335,7 @@ export class WhatsAppProvider {
   }
 
   parseIncomingWebhook(payload: Record<string, unknown>): IncomingMessage {
-    return WhatsAppProvider.parseIncomingWebhook(payload);
+    return WhatsAppProvider.parseIncomingWebhook(payload, this.mapping);
   }
 
   /**
