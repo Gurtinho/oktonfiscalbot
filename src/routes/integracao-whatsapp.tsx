@@ -15,7 +15,7 @@ import {
   Switch,
   Text,
 } from "@chakra-ui/react";
-import { Copy } from "lucide-react";
+import { Copy, Pencil, Trash2, X } from "lucide-react";
 import { toast } from "@/views/lib/toast";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/views/components/AppShell";
@@ -67,6 +67,7 @@ function WhatsAppIntegrationPage() {
   const { canConfigure, organizationId } = useAuth();
   const [form, setForm] = useState(emptyChannel);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const { data: channels } = useQuery({
     queryKey: ["whatsapp_channels"],
@@ -83,7 +84,7 @@ function WhatsAppIntegrationPage() {
   const set = (key: keyof typeof emptyChannel, value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
-  const createChannel = async () => {
+  const saveChannel = async () => {
     const parsed = channelSchema.safeParse(form);
     if (!parsed.success) {
       setErrors(Object.fromEntries(parsed.error.issues.map((i) => [String(i.path[0]), i.message])));
@@ -91,8 +92,7 @@ function WhatsAppIntegrationPage() {
       return;
     }
     setErrors({});
-    const { error } = await supabase.from("whatsapp_channels").insert({
-      organization_id: organizationId,
+    const payload = {
       display_name: form.display_name.trim() || form.provider.trim(),
       provider: form.provider.trim().toLowerCase(),
       instance_name: form.instance_name.trim(),
@@ -105,11 +105,60 @@ function WhatsAppIntegrationPage() {
       webhook_secret_name: form.webhook_secret_name.trim() || null,
       signature_mode: form.signature_mode,
       signature_header: form.signature_header.trim() || "x-webhook-signature",
-      webhook_token: crypto.randomUUID().replace(/-/g, "").slice(0, 24),
-    });
-    if (error) return toast.error(error.message);
-    toast.success("Canal criado. Copie a URL do webhook para o seu provedor.");
+    };
+
+    if (editingId) {
+      const { error } = await supabase
+        .from("whatsapp_channels")
+        .update(payload)
+        .eq("id", editingId);
+      if (error) return toast.error(error.message);
+      toast.success("Canal atualizado.");
+    } else {
+      const { error } = await supabase.from("whatsapp_channels").insert({
+        ...payload,
+        organization_id: organizationId,
+        webhook_token: crypto.randomUUID().replace(/-/g, "").slice(0, 24),
+      });
+      if (error) return toast.error(error.message);
+      toast.success("Canal criado. Copie a URL do webhook para o seu provedor.");
+    }
     setForm(emptyChannel);
+    setEditingId(null);
+    queryClient.invalidateQueries({ queryKey: ["whatsapp_channels"] });
+  };
+
+  const startEdit = (item: NonNullable<typeof channels>[number]) => {
+    setErrors({});
+    setEditingId(item.id);
+    setForm({
+      display_name: item.display_name ?? "",
+      provider: item.provider,
+      base_url: item.base_url ?? "",
+      send_url: item.send_url ?? "",
+      instance_name: item.instance_name,
+      phone_number: item.phone_number ?? "",
+      environment: item.environment ?? "homologacao",
+      status: item.status ?? "disconnected",
+      send_token_secret_name: item.send_token_secret_name ?? "",
+      webhook_secret_name: item.webhook_secret_name ?? "",
+      signature_mode: item.signature_mode ?? "none",
+      signature_header: item.signature_header ?? "x-webhook-signature",
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setErrors({});
+    setForm(emptyChannel);
+  };
+
+  const deleteChannel = async (item: NonNullable<typeof channels>[number]) => {
+    if (!window.confirm(`Excluir o canal "${item.display_name || item.instance_name}"?`)) return;
+    const { error } = await supabase.from("whatsapp_channels").delete().eq("id", item.id);
+    if (error) return toast.error(error.message);
+    if (editingId === item.id) cancelEdit();
+    toast.success("Canal excluído.");
     queryClient.invalidateQueries({ queryKey: ["whatsapp_channels"] });
   };
 
@@ -125,7 +174,7 @@ function WhatsAppIntegrationPage() {
       {canConfigure ? (
         <Card.Root borderColor="border" bg="bg.panel" shadow="panel">
           <Card.Header>
-            <Card.Title fontSize="base">Novo canal</Card.Title>
+            <Card.Title fontSize="base">{editingId ? "Editar canal" : "Novo canal"}</Card.Title>
             <Card.Description>
               Nenhuma credencial é exposta no navegador — informe apenas o nome do segredo
               armazenado no servidor.
@@ -240,9 +289,16 @@ function WhatsAppIntegrationPage() {
                   <NativeSelect.Indicator />
                 </NativeSelect.Root>
               </Field.Root>
-              <Button gridColumn={{ md: "span 2" }} onClick={createChannel}>
-                Criar canal
-              </Button>
+              <HStack gridColumn={{ md: "span 2" }} gap="2">
+                <Button flex="1" onClick={saveChannel}>
+                  {editingId ? "Salvar alterações" : "Criar canal"}
+                </Button>
+                {editingId ? (
+                  <Button variant="outline" onClick={cancelEdit}>
+                    <X /> Cancelar
+                  </Button>
+                ) : null}
+              </HStack>
             </SimpleGrid>
           </Card.Body>
         </Card.Root>
@@ -303,22 +359,45 @@ function WhatsAppIntegrationPage() {
                 >
                   <Copy /> Copiar
                 </Button>
-                <HStack gap="2" fontSize="xs" color="fg.muted">
-                  <Text>Ativo</Text>
-                  <Switch.Root
-                    checked={item.active}
-                    disabled={!canConfigure}
-                    onCheckedChange={async (e) => {
-                      await supabase
-                        .from("whatsapp_channels")
-                        .update({ active: e.checked })
-                        .eq("id", item.id);
-                      queryClient.invalidateQueries({ queryKey: ["whatsapp_channels"] });
-                    }}
-                  >
-                    <Switch.HiddenInput />
-                    <Switch.Control />
-                  </Switch.Root>
+                <HStack gap="3" fontSize="xs" color="fg.muted">
+                  <HStack gap="2">
+                    <Text>Ativo</Text>
+                    <Switch.Root
+                      checked={item.active}
+                      disabled={!canConfigure}
+                      onCheckedChange={async (e) => {
+                        await supabase
+                          .from("whatsapp_channels")
+                          .update({ active: e.checked })
+                          .eq("id", item.id);
+                        queryClient.invalidateQueries({ queryKey: ["whatsapp_channels"] });
+                      }}
+                    >
+                      <Switch.HiddenInput />
+                      <Switch.Control />
+                    </Switch.Root>
+                  </HStack>
+                  {canConfigure ? (
+                    <HStack gap="1">
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        aria-label="Editar canal"
+                        onClick={() => startEdit(item)}
+                      >
+                        <Pencil size={14} />
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        colorPalette="red"
+                        aria-label="Excluir canal"
+                        onClick={() => deleteChannel(item)}
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    </HStack>
+                  ) : null}
                 </HStack>
               </HStack>
             </Card.Body>
